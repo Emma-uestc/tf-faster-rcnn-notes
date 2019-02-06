@@ -71,4 +71,72 @@ CUDA_VISIBLE_DEVICES=${GPU_ID} ./tools/demo.py
   ![avatar](https://github.com/Emma-uestc/pictures-note/blob/master/tf-faster-rcnn-cpu-record/Figure_3.png)  
   ![avatar](https://github.com/Emma-uestc/pictures-note/blob/master/tf-faster-rcnn-cpu-record/Figure_4.png)  
   全部demo 结果可以看[这里](https://github.com/Emma-uestc/pictures-note/tree/master/tf-faster-rcnn-cpu-record)  
-  
+  ## Train your own model  
+  * 这里主要记录使用res101模型训练，由于训练过程出现很多error,基本都是`FileNotFoundError`:  
+  'file or directory does not exist',每次根据error修改文件，所以为了减少每次训练时间修改以下文件  
+  1.`tf-faster-rcnn/experiments/scripts/train_faster_rcnn.sh`中迭代次数  
+```
+ case ${DATASET} in
+  pascal_voc)
+    TRAIN_IMDB="voc_2007_trainval"
+    TEST_IMDB="voc_2007_test"
+    STEPSIZE="[50000]"
+    ITERS=70000
+    ANCHORS="[8,16,32]"
+    RATIOS="[0.5,1,2]"
+    ;;
+```  
+ 将`ITERS = 70000`改为300，不过，后来，我直接改成了60(我使用的CPU，训练太慢)  
+ 2. `tf-faster-rcnn/experiments/scripts/test_faster_rcnn.sh`中相同的改变  
+ **Note:** 我使用的是VOC 数据集，所以改动的是这里，使用哪个数据集更改哪个数据集中设置  
+ 3.下载数据集`VOCdevkit`放到./data下 使用 `mv VOCdevkit VOCdevkit2007`并只保留文件  
+ `data/VOCdevkit2007/VOC2007/ImageSets/Main/test.txt`文件的前200行(这个随意，我也不是精准的200行  
+ 就是为了减少时间)  
+ * 训练  
+ 删除之前主目录中产生的`output`和./data中`cache`，重新执行以下命令  
+```
+ NET=res101
+TRAIN_IMDB=voc_2007_trainval+voc_2012_trainval
+mkdir -p output/${NET}/${TRAIN_IMDB}
+cd output/${NET}/${TRAIN_IMDB}
+ln -s ../../../data/voc_2007_trainval+voc_2012_trainval ./default
+cd ../../..
+```  
+```
+mkdir -p data/imagenet_weights
+cd data/imagenet_weights
+wget -v http://download.tensorflow.org/models/resnet_v1_101_2016_08_28.tar.gz
+tar -xzvf resnet_v1_101_2016_08_28.tar.gz
+mv resnet_v1_101.ckpt res101.ckpt
+cd ../..
+```  
+`./experiments/scripts/train_faster_rcnn.sh 0 pascal_voc res101`  
+我使用的是res101模型和`pascal_voc`数据集，这里GPU_ID设为0，因为是使用的CPU  
+出现过以下典型的错误，出现什么添加什么  
+1.比如：FileNotFoundError 的/home/user/tf-faster-rcnn/data/VOCdevkit2007/VOC2007.../main..xxx.txt  
+不存在，/home/user/tf-faster-rcnn/data/VOCdevkit2007/results/VOC2007.../main..xxx不存在，由于下载下来  
+数据集的目录结构是这样的，VOCdevkit2007/results/VOC.../...所以，我只好在VOCdevkit2007目录下手动  
+创建一个results目录，并将目录VOC2007及其子目录复制到results中  
+2.如图  
+![avatar](https://github.com/Emma-uestc/pictures-note/blob/master/error_examples/error_ex1.png)  
+这个错误需要修改`tf-faster-rcnn/lib/datasets/voc_eval.py`文件的121行  
+```
+    with open(cachefile, 'w') as f:
+      pickle.dump(recs, f)
+```  
+修改为  
+```
+    with open(cachefile, 'wb') as f:
+      pickle.dump(recs, f)
+```  
+这样修改完，又出现了如下错误  
+![avatar](https://github.com/Emma-uestc/pictures-note/blob/master/error_examples/error_ex2.png)  
+google的结果是将该文件的105行`cachefile = os.path.join(cachedir, '%s_annots.pkl' % imagesetfile)`  
+修改为`cachefile = os.path.join(cachedir, ('%s_annots.pkl' % imagesetfile))`，该错误仍然存在，  
+又google到在项目tf-faster-rcnn 项目的issue中的上述错误的问题下的回答中的修改是将105行改为  
+`cachefile = os.path.join(cachedir, '%s_annots.pkl' % imagesetfile.split("/")[-1].split(".")[0])`  
+改过后训练成功，结果如下，由于迭代次数设置的非常少，所以准确率是很低的  
+![avatar](https://github.com/Emma-uestc/pictures-note/blob/master/error_examples/res1.png)  
+![avatar](https://github.com/Emma-uestc/pictures-note/blob/master/error_examples/res2.png)  
+**关于错误的记录我只截图了两个，这部分日记也是我回忆的，所以，关于解决方案的博客链接我没有再找，  
+也没有放进来。
